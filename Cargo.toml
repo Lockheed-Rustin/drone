@@ -1,0 +1,16 @@
+[package]
+name = "drone"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossbeam-channel = "0.5.13"
+wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git" }
+
+[dev-dependencies]
+toml = "0.8.19"
+
+[[example]]
+name = "drone_usage"
+path = "examples/drone_usage.rs"
+required-features = ["wg_2024/serialize"]
