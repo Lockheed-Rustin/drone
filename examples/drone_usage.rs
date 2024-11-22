@@ -56,8 +56,8 @@ impl MyDrone {
             PacketType::Nack(_nack) => todo!(),
             PacketType::Ack(_ack) => todo!(),
             PacketType::MsgFragment(_fragment) => todo!(),
-            PacketType::Flood(_query) => todo!(),
-            PacketType::FloodResult(_query_result) => todo!(),
+            PacketType::FloodRequest(_flood_request) => todo!(),
+            PacketType::FloodResponse(_flood_response) => todo!(),
         }
     }
     fn handle_command(&mut self, command: Command) {
@@ -110,7 +110,7 @@ fn main() {
         let sim_contr_recv = command_channels[&drone.id].1.clone();
         let packet_recv = packet_channels[&drone.id].1.clone();
         let packet_send = drone
-            .connected_drone_ids
+            .connected_node_ids
             .into_iter()
             .map(|id| (id, packet_channels[&id].0.clone()))
             .collect();

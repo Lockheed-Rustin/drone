@@ -52,8 +52,8 @@ impl LockheedRustin {
             PacketType::Nack(_nack) => todo!(),
             PacketType::Ack(_ack) => todo!(),
             PacketType::MsgFragment(_fragment) => todo!(),
-            PacketType::Flood(_query) => todo!(),
-            PacketType::FloodResult(_query_result) => todo!(),
+            PacketType::FloodRequest(_flood_request) => todo!(),
+            PacketType::FloodResponse(_flood_response) => todo!(),
         }
     }
     fn handle_command(&mut self, command: Command) {
