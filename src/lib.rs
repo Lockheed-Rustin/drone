@@ -22,7 +22,7 @@ impl Drone for LockheedRustin {
             controller_send: options.controller_send,
             controller_recv: options.controller_recv,
             packet_recv: options.packet_recv,
-            packet_send: HashMap::new(),
+            packet_send: options.packet_send,
             pdr: options.pdr,
         }
     }
