@@ -7,6 +7,3 @@ edition = "2021"
 crossbeam-channel = "0.5.13"
 rand = "0.8.5"
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git" }
-
-[dev-dependencies]
-toml = "0.8.19"
