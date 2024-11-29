@@ -3,8 +3,8 @@ use crossbeam_channel::{select, Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Nack, Packet, PacketType};
+use wg_2024::network::NodeId;
+use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
 pub struct LockheedRustin {
     pub id: u8,
@@ -48,24 +48,33 @@ impl Drone for LockheedRustin {
 }
 
 impl LockheedRustin {
-    fn check_routing(&self, h: &mut SourceRoutingHeader) -> Result<NodeId, Nack> {
-        match helper::get_hop(h) {
-            Some(hop_index) if hop_index == self.id => match helper::get_next_hop(h) {
+    fn check_routing(&self, packet: &Packet) -> Result<NodeId, Nack> {
+        match helper::get_hop(&packet) {
+            Some(hop_index) if hop_index == self.id => match helper::get_next_hop(&packet) {
                 Some(next_hop) => {
                     if !self.packet_send.contains_key(&next_hop) {
-                        Err(Nack::ErrorInRouting(next_hop))
+                        Err(Nack {
+                            fragment_index: helper::get_fragment_id(packet),
+                            nack_type: NackType::ErrorInRouting(next_hop),
+                        })
                     } else {
                         Ok(next_hop)
                     }
                 }
-                None => Err(Nack::DestinationIsDrone),
+                None => Err(Nack {
+                    fragment_index: helper::get_fragment_id(packet),
+                    nack_type: NackType::DestinationIsDrone,
+                }),
             },
-            _ => Err(Nack::UnexpectedRecipient(self.id)),
+            _ => Err(Nack {
+                fragment_index: helper::get_fragment_id(packet),
+                nack_type: NackType::UnexpectedRecipient(self.id),
+            }),
         }
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
-        if let Err(nack) = self.check_routing(&mut packet.routing_header) {
+        if let Err(nack) = self.check_routing(&packet) {
             return match packet.pack_type {
                 PacketType::Nack(_) => {}
                 _ => self.send_nack(packet, nack),
@@ -95,12 +104,25 @@ impl LockheedRustin {
 
     fn forward_packet(&self, packet: Packet) {
         if helper::should_drop(&packet, self.pdr) {
-            let fragment_index = helper::get_fragment_id(&packet).unwrap();
-            return self.send_nack(packet, Nack::Dropped(fragment_index));
+            let fragment_index = helper::get_fragment_id(&packet);
+            return self.send_nack(
+                packet,
+                Nack {
+                    fragment_index,
+                    nack_type: NackType::Dropped,
+                },
+            );
         }
-        let next_hop = helper::get_next_hop(&packet.routing_header).unwrap();
+        let next_hop = helper::get_next_hop(&packet).unwrap();
         if let Err(packet) = self.packet_send[&next_hop].send(packet) {
-            self.send_nack(packet.0, Nack::ErrorInRouting(next_hop));
+            let fragment_index = helper::get_fragment_id(&packet.0);
+            self.send_nack(
+                packet.0,
+                Nack {
+                    fragment_index,
+                    nack_type: NackType::ErrorInRouting(next_hop),
+                },
+            );
         }
     }
 
