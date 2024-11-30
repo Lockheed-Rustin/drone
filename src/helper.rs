@@ -28,9 +28,8 @@ pub fn get_next_hop(packet: &Packet) -> Option<NodeId> {
 }
 
 pub fn should_drop(packet: &Packet, pdr: f32) -> bool {
-    if let PacketType::MsgFragment(_) = packet.pack_type {
-        thread_rng().gen_range(0.0..1.0) <= pdr
-    } else {
-        false
+    match &packet.pack_type {
+        PacketType::MsgFragment(_) => thread_rng().gen_range(0.0..1.0) <= pdr,
+        _ => false,
     }
 }
