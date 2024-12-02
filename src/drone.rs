@@ -2,7 +2,7 @@ use crate::helper;
 use crossbeam_channel::{select, Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::{Drone};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
@@ -16,14 +16,19 @@ pub struct LockheedRustin {
 }
 
 impl Drone for LockheedRustin {
-    fn new(options: DroneOptions) -> Self {
+    fn new(id: NodeId,
+           controller_send: Sender<NodeEvent>,
+           controller_recv: Receiver<DroneCommand>,
+           packet_recv: Receiver<Packet>,
+           packet_send: HashMap<NodeId, Sender<Packet>>,
+           pdr: f32,) -> Self {
         Self {
-            id: options.id,
-            controller_send: options.controller_send,
-            controller_recv: options.controller_recv,
-            packet_recv: options.packet_recv,
-            packet_send: options.packet_send,
-            pdr: options.pdr,
+            id,
+            controller_recv,
+            controller_send,
+            packet_recv,
+            packet_send,
+            pdr
         }
     }
     fn run(&mut self) {
@@ -99,6 +104,7 @@ impl LockheedRustin {
             }
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
             DroneCommand::Crash => unreachable!(),
+            DroneCommand::RemoveSender(_) => unimplemented!(),
         }
     }
 
