@@ -2,7 +2,6 @@ use crate::helper;
 use crossbeam_channel::{select, Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
-use wg_2024::controller::DroneEvent::ControllerShortcut;
 use wg_2024::drone::{Drone};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
@@ -199,7 +198,7 @@ impl LockheedRustin {
         let next_hop = helper::get_next_hop(&packet).unwrap();
         packet.routing_header.hop_index += 1;
         if let Err(_) = self.packet_send[&next_hop].send(packet.clone()) {
-            self.controller_send.send(ControllerShortcut(packet)).unwrap();
+            self.controller_send.send(DroneEvent::ControllerShortcut(packet)).unwrap();
         }
     }
 
