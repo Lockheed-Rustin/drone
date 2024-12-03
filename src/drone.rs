@@ -119,7 +119,7 @@ impl LockheedRustin {
                 },
             );
         }
-        let next_hop = helper::get_next_hop(&packet).unwrap();
+        let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
         match self.packet_send[&next_hop].send(packet.clone()) {
             Ok(_) => {
                 self.controller_send.send(DroneEvent::PacketSent(packet));
