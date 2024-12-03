@@ -1,14 +1,14 @@
 use crate::helper;
 use crossbeam_channel::{select, Receiver, Sender};
 use std::collections::HashMap;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::{Drone};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
 pub struct LockheedRustin {
     pub id: u8,
-    pub controller_send: Sender<NodeEvent>,
+    pub controller_send: Sender<DroneEvent>,
     pub controller_recv: Receiver<DroneCommand>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -17,7 +17,7 @@ pub struct LockheedRustin {
 
 impl Drone for LockheedRustin {
     fn new(id: NodeId,
-           controller_send: Sender<NodeEvent>,
+           controller_send: Sender<DroneEvent>,
            controller_recv: Receiver<DroneCommand>,
            packet_recv: Receiver<Packet>,
            packet_send: HashMap<NodeId, Sender<Packet>>,
