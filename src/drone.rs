@@ -1,5 +1,5 @@
 use crate::helper;
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{select, Receiver, SendError, Sender};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::{Drone};
@@ -120,15 +120,20 @@ impl LockheedRustin {
             );
         }
         let next_hop = helper::get_next_hop(&packet).unwrap();
-        if let Err(packet) = self.packet_send[&next_hop].send(packet) {
-            let fragment_index = helper::get_fragment_id(&packet.0);
-            self.send_nack(
-                packet.0,
-                Nack {
-                    fragment_index,
-                    nack_type: NackType::ErrorInRouting(next_hop),
-                },
-            );
+        match self.packet_send[&next_hop].send(packet.clone()) {
+            Ok(_) => {
+                self.controller_send.send(DroneEvent::PacketSent(packet));
+            }
+            Err(packet) => {
+                let fragment_index = helper::get_fragment_id(&packet.0);
+                self.send_nack(
+                    packet.0,
+                    Nack {
+                        fragment_index,
+                        nack_type: NackType::ErrorInRouting(next_hop),
+                    },
+                );
+            }
         }
     }
 
