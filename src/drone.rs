@@ -151,16 +151,21 @@ impl LockheedRustin {
         }
         let next_hop = helper::get_next_hop(&packet).unwrap();
         packet.routing_header.hop_index += 1;
-        if let Err(mut packet) = self.packet_send[&next_hop].send(packet) {
-            let fragment_index = helper::get_fragment_id(&packet.0);
-            packet.0.routing_header.hop_index -= 1;
-            self.send_nack(
-                packet.0,
-                Nack {
-                    fragment_index,
-                    nack_type: NackType::ErrorInRouting(next_hop),
-                },
-            );
+        match self.packet_send[&next_hop].send(packet.clone()) {
+            Ok(_) => {
+                self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
+            }
+            Err(mut packet) => {
+                let fragment_index = helper::get_fragment_id(&packet.0);
+                packet.0.routing_header.hop_index -= 1;
+                self.send_nack(
+                    packet.0,
+                    Nack {
+                        fragment_index,
+                        nack_type: NackType::ErrorInRouting(next_hop),
+                    },
+                );
+            }
         }
     }
 
@@ -197,8 +202,13 @@ impl LockheedRustin {
     fn forward_special_packet(&self, mut packet: Packet) {
         let next_hop = helper::get_next_hop(&packet).unwrap();
         packet.routing_header.hop_index += 1;
-        if let Err(_) = self.packet_send[&next_hop].send(packet.clone()) {
-            self.controller_send.send(DroneEvent::ControllerShortcut(packet)).unwrap();
+        match self.packet_send[&next_hop].send(packet.clone()) {
+            Ok(_) => {
+                self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
+            }
+            Err(_) => {
+                self.controller_send.send(DroneEvent::ControllerShortcut(packet)).unwrap();
+            }
         }
     }
 
@@ -237,7 +247,9 @@ impl LockheedRustin {
 
                 for (node_id, sender) in self.packet_send {
                     if node_id != sender_id {
-                        sender.send(packet.clone()).unwrap();
+                        if let Ok(_) = sender.send(packet.clone()){
+                            self.controller_send.send(DroneEvent::PacketSent(packet.clone())).unwrap();
+                        }
                     }
                 }
             }
