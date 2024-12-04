@@ -95,7 +95,7 @@ impl LockheedRustin {
                     self.forward_packet(packet);
                 }
                 else {
-                    self.forward_special_packet(packet)
+                    self.forward_ctrl_packet(packet)
                 }
             }
         }
@@ -192,14 +192,14 @@ impl LockheedRustin {
         };
 
         //forward Nack Packet
-        self.forward_special_packet(nack_packet)
+        self.forward_ctrl_packet(nack_packet)
     }
 
     /// Forward all special packets that should not be dropped and that need to be sent to the simulation controller to avoid a crashed drone in their path.
     ///
     /// Parameters:
     /// packet:Packet -> the packet to forward
-    fn forward_special_packet(&self, mut packet: Packet) {
+    fn forward_ctrl_packet(&self, mut packet: Packet) {
         let next_hop = helper::get_next_hop(&packet).unwrap();
         packet.routing_header.hop_index += 1;
         match self.packet_send[&next_hop].send(packet.clone()) {
@@ -234,13 +234,13 @@ impl LockheedRustin {
                     routing_header: SourceRoutingHeader {
                         hop_index: 1,
                         hops: flood_request.path_trace.iter()
-                            .map(|(nodeId, _)| {nodeId})
+                            .map(|(nodeId, _)| {*nodeId})
                             .collect(),
                     },
                     session_id: packet.session_id,
                 };
 
-                self.forward_special_packet(flood_response_packet)
+                self.forward_ctrl_packet(flood_response_packet)
             },
             _ => {
                 self.flood_archive.insert(flood_request.initiator_id.clone(), flood_request.flood_id);
