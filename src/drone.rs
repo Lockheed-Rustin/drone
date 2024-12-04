@@ -177,7 +177,7 @@ impl LockheedRustin {
     fn send_nack(&self, packet: Packet, nack: Nack) {
         //create Nack packet
         let mut path: Vec<NodeId> = packet.routing_header.hops.iter().enumerate()
-            .filter(|(i, _)| {*i < packet.routing_header.hop_index})
+            .filter(|(i, _)| {*i <= packet.routing_header.hop_index})
             .map(|(_, elem)| *elem)
             .collect();
         path.reverse();
