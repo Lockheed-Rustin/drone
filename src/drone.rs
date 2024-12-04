@@ -81,9 +81,9 @@ impl LockheedRustin {
     /// Otherwise, it sends a Nack packet to the packet sender instead
     /// Parameters:
     /// packet:Packet -> packet to handle
-    fn handle_packet(&mut self, mut packet: Packet) {
+    fn handle_packet(&mut self, packet: Packet) {
         match packet.pack_type {
-            PacketType::FloodRequest(ref mut flood_request) => self.handle_flood_request(packet.clone(), flood_request),
+            PacketType::FloodRequest(ref flood_request) => self.handle_flood_request(packet.clone(), flood_request.clone()),
             _ => {
                 if let Err(nack) = self.check_routing(&packet) {
                     return match packet.pack_type {
@@ -178,7 +178,7 @@ impl LockheedRustin {
         //create Nack packet
         let mut path: Vec<NodeId> = packet.routing_header.hops.iter().enumerate()
             .filter(|(i, _)| {*i < packet.routing_header.hop_index})
-            .map(|(i, elem)| *elem)
+            .map(|(_, elem)| *elem)
             .collect();
         path.reverse();
 
@@ -218,9 +218,10 @@ impl LockheedRustin {
     /// Parameters:
     /// packet:Packet -> the packet containing the session_id and the routing information
     /// flood_request:FloodRequest -> the flood request to forward
-    fn handle_flood_request(&mut self,  mut packet: Packet, flood_request: &mut FloodRequest) {
+    fn handle_flood_request(&mut self,  mut packet: Packet, mut flood_request: FloodRequest) {
         let sender_id = flood_request.path_trace.last().unwrap().0;
         flood_request.path_trace.push((self.id, NodeType::Drone));
+        packet.pack_type = PacketType::FloodRequest(flood_request.clone());
 
         match self.flood_archive.get(&flood_request.initiator_id) {
             Some(&flood_id) if flood_id == flood_request.flood_id => {
@@ -234,7 +235,7 @@ impl LockheedRustin {
                     routing_header: SourceRoutingHeader {
                         hop_index: 1,
                         hops: flood_request.path_trace.iter()
-                            .map(|(nodeId, _)| {*nodeId})
+                            .map(|(node_id, _)| {*node_id})
                             .collect(),
                     },
                     session_id: packet.session_id,
@@ -245,7 +246,7 @@ impl LockheedRustin {
             _ => {
                 self.flood_archive.insert(flood_request.initiator_id.clone(), flood_request.flood_id);
 
-                for (node_id, sender) in self.packet_send {
+                for (node_id, sender) in self.packet_send.clone() {
                     if node_id != sender_id {
                         if let Ok(_) = sender.send(packet.clone()){
                             self.controller_send.send(DroneEvent::PacketSent(packet.clone())).unwrap();
