@@ -83,7 +83,7 @@ impl LockheedRustin {
     /// packet:Packet -> packet to handle
     fn handle_packet(&mut self, mut packet: Packet) {
         match packet.pack_type {
-            PacketType::FloodRequest(ref mut flood_request) => self.handle_flood_request(packet, flood_request),
+            PacketType::FloodRequest(ref mut flood_request) => self.handle_flood_request(packet.clone(), flood_request),
             _ => {
                 if let Err(nack) = self.check_routing(&packet) {
                     return match packet.pack_type {
