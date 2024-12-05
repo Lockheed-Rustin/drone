@@ -196,7 +196,7 @@ impl LockheedRustin {
 
     /// Handle the given flood_request.
     fn handle_flood_request(&mut self, packet: Packet) {
-        let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone() else {
+        let PacketType::FloodRequest(mut flood_request) = packet.pack_type else {
             return;
         };
         flood_request.path_trace.push((self.id, NodeType::Drone));
@@ -227,9 +227,16 @@ impl LockheedRustin {
             }
             cache.push_back(flood_request.flood_id);
 
-            let sender_id = match flood_request.path_trace.last() {
-                Some((id, _)) => *id,
-                None => return,
+            let Some((sender_id, _)) = flood_request.path_trace.last().cloned() else {
+                return;
+            };
+            let packet = Packet {
+                pack_type: PacketType::FloodRequest(flood_request),
+                routing_header: SourceRoutingHeader {
+                    hop_index: 0,
+                    hops: Vec::new(),
+                },
+                session_id: packet.session_id,
             };
             for (node_id, sender) in self.packet_send.iter() {
                 if *node_id != sender_id {
