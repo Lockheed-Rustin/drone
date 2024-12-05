@@ -1,11 +1,13 @@
 use crate::helper;
 use crossbeam_channel::{select, Receiver, Sender};
 use rand::{thread_rng, Rng};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+
+pub const FLOOD_CACHE_SIZE: usize = 16;
 
 pub struct LockheedRustin {
     id: NodeId,
@@ -14,7 +16,7 @@ pub struct LockheedRustin {
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     pdr: f32,
-    flood_archive: HashMap<NodeId, u64>,
+    flood_cache: HashMap<NodeId, VecDeque<u64>>,
 }
 
 impl Drone for LockheedRustin {
@@ -33,7 +35,7 @@ impl Drone for LockheedRustin {
             packet_recv,
             packet_send,
             pdr,
-            flood_archive: HashMap::new(),
+            flood_cache: HashMap::new(),
         }
     }
     fn run(&mut self) {
@@ -46,11 +48,10 @@ impl Drone for LockheedRustin {
                 },
                 recv(self.controller_recv) -> command => {
                     if let Ok(command) = command {
+                        self.handle_command(command.clone());
                         if let DroneCommand::Crash = command {
-                            self.handle_crash();
                             return;
                         }
-                        self.handle_command(command);
                     }
                 }
             }
@@ -69,7 +70,7 @@ impl LockheedRustin {
                 self.packet_send.insert(node_id, sender);
             }
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
-            DroneCommand::Crash => unreachable!(),
+            DroneCommand::Crash => self.handle_crash(),
         }
     }
 
@@ -150,7 +151,7 @@ impl LockheedRustin {
         match packet.pack_type {
             PacketType::MsgFragment(ref fragment) => {
                 // create Nack path
-                if packet.routing_header.hops.is_empty() {
+                if packet.routing_header.hops.len() < 2 {
                     return;
                 }
                 let mut hops = packet
@@ -163,6 +164,13 @@ impl LockheedRustin {
                     .collect::<Vec<_>>();
                 // force first id to be this drone id to fix unexpected recepient errors
                 hops[0] = self.id;
+                if !self.packet_send.contains_key(&hops[1]) {
+                    // this means that the packet was malformed
+                    self.controller_send
+                        .send(DroneEvent::ControllerShortcut(packet))
+                        .unwrap();
+                    return;
+                }
 
                 self.forward_packet(Packet {
                     pack_type: PacketType::Nack(Nack {
@@ -187,48 +195,48 @@ impl LockheedRustin {
     }
 
     /// Handle the given flood_request.
-    fn handle_flood_request(&mut self, mut packet: Packet) {
-        let PacketType::FloodRequest(mut flood_request) = packet.pack_type else {
+    fn handle_flood_request(&mut self, packet: Packet) {
+        let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone() else {
             return;
         };
-        let sender_id = flood_request.path_trace.last().unwrap().0;
         flood_request.path_trace.push((self.id, NodeType::Drone));
-        packet.pack_type = PacketType::FloodRequest(flood_request.clone());
 
-        match self.flood_archive.get(&flood_request.initiator_id) {
-            Some(&flood_id) if flood_id == flood_request.flood_id => {
-                self.flood_archive
-                    .insert(flood_request.initiator_id.clone(), flood_request.flood_id);
+        let cache = self
+            .flood_cache
+            .entry(flood_request.initiator_id)
+            .or_default();
 
-                let flood_response_packet = Packet {
-                    pack_type: PacketType::FloodResponse(FloodResponse {
-                        flood_id,
-                        path_trace: flood_request.path_trace.clone(),
-                    }),
-                    routing_header: SourceRoutingHeader {
-                        hop_index: 1,
-                        hops: flood_request
-                            .path_trace
-                            .iter()
-                            .map(|(node_id, _)| *node_id)
-                            .collect(),
-                    },
-                    session_id: packet.session_id,
-                };
-
-                self.forward_packet(flood_response_packet)
+        if cache.contains(&flood_request.flood_id) {
+            let hops = flood_request
+                .path_trace
+                .iter()
+                .map(|(id, _)| *id)
+                .rev()
+                .collect();
+            self.forward_packet(Packet {
+                pack_type: PacketType::FloodResponse(FloodResponse {
+                    flood_id: flood_request.flood_id,
+                    path_trace: flood_request.path_trace,
+                }),
+                routing_header: SourceRoutingHeader { hop_index: 0, hops },
+                session_id: packet.session_id,
+            });
+        } else {
+            if cache.len() >= FLOOD_CACHE_SIZE {
+                cache.pop_front();
             }
-            _ => {
-                self.flood_archive
-                    .insert(flood_request.initiator_id.clone(), flood_request.flood_id);
+            cache.push_back(flood_request.flood_id);
 
-                for (node_id, sender) in self.packet_send.clone() {
-                    if node_id != sender_id {
-                        if let Ok(_) = sender.send(packet.clone()) {
-                            self.controller_send
-                                .send(DroneEvent::PacketSent(packet.clone()))
-                                .unwrap();
-                        }
+            let sender_id = match flood_request.path_trace.last() {
+                Some((id, _)) => *id,
+                None => return,
+            };
+            for (node_id, sender) in self.packet_send.iter() {
+                if *node_id != sender_id {
+                    if let Ok(_) = sender.send(packet.clone()) {
+                        self.controller_send
+                            .send(DroneEvent::PacketSent(packet.clone()))
+                            .unwrap();
                     }
                 }
             }
