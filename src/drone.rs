@@ -1,11 +1,18 @@
 use crate::helper;
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use rand::{thread_rng, Rng};
 use std::collections::{HashMap, VecDeque};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DroneState {
+    Created,
+    Running,
+    Crashed,
+}
 
 pub const FLOOD_CACHE_SIZE: usize = 16;
 
@@ -16,7 +23,9 @@ pub struct LockheedRustin {
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     pdr: f32,
+
     flood_cache: HashMap<NodeId, VecDeque<u64>>,
+    state: DroneState,
 }
 
 impl Drone for LockheedRustin {
@@ -36,24 +45,25 @@ impl Drone for LockheedRustin {
             packet_send,
             pdr,
             flood_cache: HashMap::new(),
+            state: DroneState::Created,
         }
     }
     fn run(&mut self) {
+        self.state = DroneState::Running;
         loop {
-            select! {
+            select_biased! {
+                recv(self.controller_recv) -> command => {
+                    if let Ok(command) = command {
+                        self.handle_command(command);
+                    }
+                }
                 recv(self.packet_recv) -> packet => {
                     if let Ok(packet) = packet {
                         self.handle_packet(packet);
+                    } else if self.state == DroneState::Crashed {
+                        return;
                     }
                 },
-                recv(self.controller_recv) -> command => {
-                    if let Ok(command) = command {
-                        self.handle_command(command.clone());
-                        if let DroneCommand::Crash = command {
-                            return;
-                        }
-                    }
-                }
             }
         }
     }
@@ -70,7 +80,7 @@ impl LockheedRustin {
                 self.packet_send.insert(node_id, sender);
             }
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
-            DroneCommand::Crash => self.handle_crash(),
+            DroneCommand::Crash => self.state = DroneState::Crashed, // wait for the controller to close all senders
         }
     }
 
@@ -79,10 +89,16 @@ impl LockheedRustin {
     /// Otherwise, it sends a Nack packet to the packet sender instead.
     fn handle_packet(&mut self, packet: Packet) {
         match packet.pack_type {
-            PacketType::MsgFragment(_) => match self.check_routing(&packet.routing_header) {
-                Ok(_) => self.forward_fragment(packet),
-                Err(nack_type) => self.handle_drop(packet, nack_type),
-            },
+            PacketType::MsgFragment(_) => {
+                if self.state == DroneState::Crashed {
+                    self.handle_drop(packet, NackType::ErrorInRouting(self.id));
+                } else {
+                    match self.check_routing(&packet.routing_header) {
+                        Ok(_) => self.forward_fragment(packet),
+                        Err(nack_type) => self.handle_drop(packet, nack_type),
+                    }
+                }
+            }
             PacketType::FloodRequest(_) => self.handle_flood_request(packet),
             _ => match self.check_routing(&packet.routing_header) {
                 Ok(_) => self.forward_packet(packet),
@@ -92,11 +108,6 @@ impl LockheedRustin {
                     .unwrap(),
             },
         }
-    }
-
-    /// Handle the drone crashing.
-    fn handle_crash(&mut self) {
-        todo!()
     }
 
     /// Check if there has been an error in routing.
