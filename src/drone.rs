@@ -189,7 +189,7 @@ impl LockheedRustin {
                     .take(packet.routing_header.hop_index + 1)
                     .rev()
                     .collect::<Vec<_>>();
-                // force first id to be this drone id to fix unexpected recepient errors
+                // force first id to be this drone id to fix unexpected recipient errors
                 hops[0] = self.id;
                 if !self.packet_send.contains_key(&hops[1]) {
                     // this means that the packet was malformed
