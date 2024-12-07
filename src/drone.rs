@@ -1,4 +1,6 @@
 use crate::helper;
+#[cfg(feature = "sounds")]
+use crate::sounds;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use rand::{thread_rng, Rng};
 use std::collections::{HashMap, VecDeque};
@@ -80,7 +82,12 @@ impl LockheedRustin {
                 self.packet_send.insert(node_id, sender);
             }
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
-            DroneCommand::Crash => self.state = DroneState::Crashed, // wait for the controller to close all senders
+            DroneCommand::Crash => {
+                #[cfg(feature = "sounds")]
+                sounds::play_crash();
+                // wait for the controller to close all senders
+                self.state = DroneState::Crashed;
+            }
         }
     }
 
@@ -159,6 +166,15 @@ impl LockheedRustin {
     /// Create a new nack packet using the given Nack and the received packet to get the information about the session_id and the routing.
     /// If the packet cannot be dropped it's sent to the controller.
     fn handle_drop(&self, packet: Packet, nack_type: NackType) {
+        #[cfg(feature = "sounds")]
+        {
+            const EASTER_EGG_RATE: f32 = 0.1;
+            if thread_rng().gen_range(0.0..=1.0) <= EASTER_EGG_RATE {
+                sounds::play_easter_egg();
+            } else {
+                sounds::play_drop();
+            }
+        }
         match packet.pack_type {
             PacketType::MsgFragment(ref fragment) => {
                 // create Nack path
