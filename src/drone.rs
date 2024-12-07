@@ -3,7 +3,7 @@ use crate::helper;
 use crate::sounds;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use rand::{thread_rng, Rng};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
@@ -26,7 +26,7 @@ pub struct LockheedRustin {
     packet_send: HashMap<NodeId, Sender<Packet>>,
     pdr: f32,
 
-    flood_cache: HashMap<NodeId, VecDeque<u64>>,
+    flood_cache: HashSet<(NodeId, u64)>,
     state: DroneState,
 }
 
@@ -46,7 +46,7 @@ impl Drone for LockheedRustin {
             packet_recv,
             packet_send,
             pdr,
-            flood_cache: HashMap::new(),
+            flood_cache: HashSet::new(),
             state: DroneState::Created,
         }
     }
@@ -148,7 +148,6 @@ impl LockheedRustin {
     fn forward_packet(&self, mut packet: Packet) {
         let next_hop = helper::get_next_hop(&packet.routing_header).unwrap();
         packet.routing_header.hop_index += 1;
-        // todo: add check if next_hop is in neighbor
         match self.packet_send[&next_hop].send(packet.clone()) {
             Ok(_) => {
                 self.controller_send
@@ -231,12 +230,11 @@ impl LockheedRustin {
         };
         flood_request.path_trace.push((self.id, NodeType::Drone));
 
-        let cache = self
+        if self
             .flood_cache
-            .entry(flood_request.initiator_id)
-            .or_default();
-
-        if cache.contains(&flood_request.flood_id) {
+            .insert((flood_request.initiator_id, flood_request.flood_id))
+            || (self.packet_send.len() == 1 && self.packet_send.contains_key(&sender_id))
+        {
             let hops = flood_request
                 .path_trace
                 .iter()
@@ -252,11 +250,6 @@ impl LockheedRustin {
                 session_id: packet.session_id,
             });
         } else {
-            if cache.len() >= FLOOD_CACHE_SIZE {
-                cache.pop_front();
-            }
-            cache.push_back(flood_request.flood_id);
-
             let packet = Packet {
                 pack_type: PacketType::FloodRequest(flood_request),
                 routing_header: SourceRoutingHeader {
