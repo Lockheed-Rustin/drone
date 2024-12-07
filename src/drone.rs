@@ -230,7 +230,7 @@ impl LockheedRustin {
         };
         flood_request.path_trace.push((self.id, NodeType::Drone));
 
-        if self
+        if !self
             .flood_cache
             .insert((flood_request.initiator_id, flood_request.flood_id))
             || (self.packet_send.len() == 1 && self.packet_send.contains_key(&sender_id))
