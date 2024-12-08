@@ -7,7 +7,12 @@ edition = "2021"
 crossbeam-channel = "0.5.13"
 rand = "0.8.5"
 rodio = { version = "0.20.1", optional = true }
-wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git" }
+wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", rev = "refs/pull/121/head" }
+
+[dev-dependencies]
+wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", rev = "refs/pull/121/head", features = [
+    "debug",
+] }
 
 [features]
 sounds = ["dep:rodio"]
