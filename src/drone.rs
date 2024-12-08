@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DroneState {
@@ -81,7 +81,7 @@ impl LockheedRustin {
             DroneCommand::AddSender(node_id, sender) => {
                 self.packet_send.insert(node_id, sender);
             }
-            DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
+            DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr.clamp(0.0, 1.0),
             DroneCommand::Crash => {
                 #[cfg(feature = "sounds")]
                 sounds::play_crash();
@@ -101,12 +101,14 @@ impl LockheedRustin {
                     self.handle_drop(packet, NackType::ErrorInRouting(self.id));
                 } else {
                     match self.check_routing(&packet.routing_header) {
-                        Ok(_) => self.forward_fragment(packet),
+                        Ok(_) => self.forward_droppable_packet(packet),
                         Err(nack_type) => self.handle_drop(packet, nack_type),
                     }
                 }
             }
-            PacketType::FloodRequest(_) => self.handle_flood_request(packet),
+            PacketType::FloodRequest(flood_request) => {
+                self.handle_flood_request(flood_request, packet.session_id)
+            }
             _ => match self.check_routing(&packet.routing_header) {
                 Ok(_) => self.forward_packet(packet),
                 Err(_) => self
@@ -135,8 +137,8 @@ impl LockheedRustin {
         }
     }
 
-    /// Forward the fragment.
-    fn forward_fragment(&self, packet: Packet) {
+    /// Forward the droppable packet.
+    fn forward_droppable_packet(&self, packet: Packet) {
         if thread_rng().gen_range(0.0..=1.0) <= self.pdr {
             self.handle_drop(packet, NackType::Dropped);
         } else {
@@ -198,20 +200,21 @@ impl LockheedRustin {
                     return;
                 }
 
-                self.forward_packet(Packet {
-                    pack_type: PacketType::Nack(Nack {
-                        fragment_index: fragment.fragment_index,
-                        nack_type,
-                    }),
-                    routing_header: SourceRoutingHeader { hop_index: 0, hops },
-                    session_id: packet.session_id,
-                });
-
+                let session_id = packet.session_id;
+                let fragment_index = fragment.fragment_index;
                 if let NackType::Dropped = nack_type {
                     self.controller_send
                         .send(DroneEvent::PacketDropped(packet))
                         .unwrap();
                 }
+                self.forward_packet(Packet {
+                    pack_type: PacketType::Nack(Nack {
+                        fragment_index,
+                        nack_type,
+                    }),
+                    routing_header: SourceRoutingHeader { hop_index: 0, hops },
+                    session_id,
+                });
             }
             _ => self
                 .controller_send
@@ -221,10 +224,7 @@ impl LockheedRustin {
     }
 
     /// Handle the given flood_request.
-    fn handle_flood_request(&mut self, packet: Packet) {
-        let PacketType::FloodRequest(mut flood_request) = packet.pack_type else {
-            return;
-        };
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
         let Some((sender_id, _)) = flood_request.path_trace.last().cloned() else {
             return;
         };
@@ -235,19 +235,20 @@ impl LockheedRustin {
             .insert((flood_request.initiator_id, flood_request.flood_id))
             || (self.packet_send.len() == 1 && self.packet_send.contains_key(&sender_id))
         {
-            let hops = flood_request
+            let mut hops = flood_request
                 .path_trace
                 .iter()
                 .map(|(id, _)| *id)
                 .rev()
                 .collect();
+            helper::simplify_hops(&mut hops);
             self.forward_packet(Packet {
                 pack_type: PacketType::FloodResponse(FloodResponse {
                     flood_id: flood_request.flood_id,
                     path_trace: flood_request.path_trace,
                 }),
                 routing_header: SourceRoutingHeader { hop_index: 0, hops },
-                session_id: packet.session_id,
+                session_id,
             });
         } else {
             let packet = Packet {
@@ -256,7 +257,7 @@ impl LockheedRustin {
                     hop_index: 0,
                     hops: Vec::new(),
                 },
-                session_id: packet.session_id,
+                session_id,
             };
             for (node_id, sender) in self.packet_send.iter() {
                 if *node_id != sender_id && sender.send(packet.clone()).is_ok() {
