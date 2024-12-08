@@ -120,8 +120,8 @@ impl LockheedRustin {
     /// Check if there has been an error in routing.
     /// Check if the packet has been delivered to the right destination (itself) and if the next hop is valid.
     fn check_routing(&self, header: &SourceRoutingHeader) -> Result<NodeId, NackType> {
-        match helper::get_hop(&header) {
-            Some(hop_index) if hop_index == self.id => match helper::get_next_hop(&header) {
+        match helper::get_hop(header) {
+            Some(hop_index) if hop_index == self.id => match helper::get_next_hop(header) {
                 Some(next_hop) => {
                     if !self.packet_send.contains_key(&next_hop) {
                         Err(NackType::ErrorInRouting(next_hop))
@@ -259,12 +259,10 @@ impl LockheedRustin {
                 session_id: packet.session_id,
             };
             for (node_id, sender) in self.packet_send.iter() {
-                if *node_id != sender_id {
-                    if let Ok(_) = sender.send(packet.clone()) {
-                        self.controller_send
-                            .send(DroneEvent::PacketSent(packet.clone()))
-                            .unwrap();
-                    }
+                if *node_id != sender_id && sender.send(packet.clone()).is_ok() {
+                    self.controller_send
+                        .send(DroneEvent::PacketSent(packet.clone()))
+                        .unwrap();
                 }
             }
         }
