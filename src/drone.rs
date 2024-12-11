@@ -16,8 +16,6 @@ enum DroneState {
     Crashed,
 }
 
-pub const FLOOD_CACHE_SIZE: usize = 16;
-
 pub struct LockheedRustin {
     id: NodeId,
     controller_send: Sender<DroneEvent>,
