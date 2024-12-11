@@ -16,3 +16,8 @@ wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = [
 
 [features]
 sounds = ["dep:rodio"]
+
+[[example]]
+name = "crash"
+path = "examples/crash/crash.rs"
+required-features = ["sounds"]
