@@ -1,8 +1,10 @@
 use crate::helper;
 #[cfg(feature = "sounds")]
-use crate::sounds;
+use crate::sounds::{CRASH_SOUND, DROP_SOUND, EASTER_EGG_SOUND};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use rand::{thread_rng, Rng};
+#[cfg(feature = "sounds")]
+use rodio::{OutputStream, OutputStreamHandle};
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
@@ -26,6 +28,9 @@ pub struct LockheedRustin {
 
     flood_cache: HashSet<(NodeId, u64)>,
     state: DroneState,
+
+    #[cfg(feature = "sounds")]
+    pub(crate) sound_sys: (OutputStream, OutputStreamHandle),
 }
 
 impl Drone for LockheedRustin {
@@ -46,6 +51,8 @@ impl Drone for LockheedRustin {
             pdr,
             flood_cache: HashSet::new(),
             state: DroneState::Created,
+            #[cfg(feature = "sounds")]
+            sound_sys: OutputStream::try_default().unwrap(),
         }
     }
     fn run(&mut self) {
@@ -82,7 +89,7 @@ impl LockheedRustin {
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr.clamp(0.0, 1.0),
             DroneCommand::Crash => {
                 #[cfg(feature = "sounds")]
-                sounds::play_crash();
+                self.play_sound(CRASH_SOUND);
                 // wait for the controller to close all senders
                 self.state = DroneState::Crashed;
             }
@@ -169,9 +176,9 @@ impl LockheedRustin {
         {
             const EASTER_EGG_RATE: f32 = 0.1;
             if thread_rng().gen_range(0.0..=1.0) <= EASTER_EGG_RATE {
-                sounds::play_easter_egg();
+                self.play_sound(EASTER_EGG_SOUND);
             } else {
-                sounds::play_drop();
+                self.play_sound(DROP_SOUND);
             }
         }
         match packet.pack_type {

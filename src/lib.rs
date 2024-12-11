@@ -1,6 +1,6 @@
 mod drone;
 mod helper;
 #[cfg(feature = "sounds")]
-pub mod sounds;
+mod sounds;
 
 pub use drone::*;

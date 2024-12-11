@@ -22,3 +22,4 @@ Lockheed-Rustin = { git = "https://github.com/Lockheed-Rustin/drone.git", packag
     "sounds",
 ] }
 ```
+Note that if you enable sounds the drone cannot be sent between thread.
