@@ -1,4 +1,4 @@
-use drone::LockheedRustin;
+use lockheedrustin_drone::LockheedRustin;
 use wg_2024::tests;
 
 #[test]
