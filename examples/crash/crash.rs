@@ -1,5 +1,5 @@
 use crossbeam_channel::unbounded;
-use drone::LockheedRustin;
+use lockheedrustin_drone::LockheedRustin;
 use std::{collections::HashMap, thread, time::Duration};
 use wg_2024::{controller::DroneCommand, drone::Drone};
 
