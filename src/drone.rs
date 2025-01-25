@@ -232,9 +232,7 @@ impl LockheedRustin {
 
     /// Handle the given flood_request.
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
-        let Some((sender_id, _)) = flood_request.path_trace.last().cloned() else {
-            return;
-        };
+        let sender_id = flood_request.path_trace.last().map_or(flood_request.initiator_id, |&(sender_id, _)| sender_id);
         flood_request.path_trace.push((self.id, NodeType::Drone));
 
         if !self
