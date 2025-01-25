@@ -64,8 +64,7 @@ impl Drone for LockheedRustin {
                 } else {
                     return;
                 }
-            }
-            else {
+            } else {
                 select_biased! {
                     recv(self.controller_recv) -> command => {
                         if let Ok(command) = command {
@@ -123,10 +122,11 @@ impl LockheedRustin {
             }
             _ => match self.check_routing(&packet.routing_header) {
                 Ok(_) => self.forward_packet(packet),
-                Err(_) => self
-                    .controller_send
-                    .send(DroneEvent::ControllerShortcut(packet))
-                    .unwrap(),
+                Err(_) => {
+                    _ = self
+                        .controller_send
+                        .send(DroneEvent::ControllerShortcut(packet));
+                }
             },
         }
     }
@@ -163,11 +163,7 @@ impl LockheedRustin {
         let next_hop = helper::get_next_hop(&packet.routing_header).unwrap();
         packet.routing_header.hop_index += 1;
         match self.packet_send[&next_hop].send(packet.clone()) {
-            Ok(_) => {
-                self.controller_send
-                    .send(DroneEvent::PacketSent(packet))
-                    .unwrap();
-            }
+            Ok(_) => _ = self.controller_send.send(DroneEvent::PacketSent(packet)),
             Err(_) => {
                 // this means that the drone has crashed
                 packet.routing_header.hop_index -= 1;
@@ -206,18 +202,16 @@ impl LockheedRustin {
                 hops[0] = self.id;
                 if !self.packet_send.contains_key(&hops[1]) {
                     // this means that the packet was malformed
-                    self.controller_send
-                        .send(DroneEvent::ControllerShortcut(packet))
-                        .unwrap();
+                    _ = self
+                        .controller_send
+                        .send(DroneEvent::ControllerShortcut(packet));
                     return;
                 }
 
                 let session_id = packet.session_id;
                 let fragment_index = fragment.fragment_index;
                 if let NackType::Dropped = nack_type {
-                    self.controller_send
-                        .send(DroneEvent::PacketDropped(packet))
-                        .unwrap();
+                    _ = self.controller_send.send(DroneEvent::PacketDropped(packet));
                 }
                 self.forward_packet(Packet {
                     pack_type: PacketType::Nack(Nack {
@@ -228,10 +222,11 @@ impl LockheedRustin {
                     session_id,
                 });
             }
-            _ => self
-                .controller_send
-                .send(DroneEvent::ControllerShortcut(packet))
-                .unwrap(),
+            _ => {
+                _ = self
+                    .controller_send
+                    .send(DroneEvent::ControllerShortcut(packet))
+            }
         }
     }
 
@@ -273,9 +268,9 @@ impl LockheedRustin {
             };
             for (node_id, sender) in self.packet_send.iter() {
                 if *node_id != sender_id && sender.send(packet.clone()).is_ok() {
-                    self.controller_send
-                        .send(DroneEvent::PacketSent(packet.clone()))
-                        .unwrap();
+                    _ = self
+                        .controller_send
+                        .send(DroneEvent::PacketSent(packet.clone()));
                 }
             }
         }
