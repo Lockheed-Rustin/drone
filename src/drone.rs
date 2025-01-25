@@ -106,28 +106,39 @@ impl LockheedRustin {
     /// Check whether the routing is correct and, if it's correct, forward the packet appropriately.
     /// Otherwise, it sends a Nack packet to the packet sender instead.
     fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
-            PacketType::MsgFragment(_) => {
-                if self.state == DroneState::Crashed {
-                    self.handle_drop(packet, NackType::ErrorInRouting(self.id));
-                } else {
-                    match self.check_routing(&packet.routing_header) {
-                        Ok(_) => self.forward_droppable_packet(packet),
-                        Err(nack_type) => self.handle_drop(packet, nack_type),
+        if self.state != DroneState::Crashed {
+            match packet.pack_type {
+                PacketType::MsgFragment(_) => match self.check_routing(&packet.routing_header) {
+                    Ok(_) => self.forward_droppable_packet(packet),
+                    Err(nack_type) => self.handle_drop(packet, nack_type),
+                },
+                PacketType::FloodRequest(flood_request) => {
+                    self.handle_flood_request(flood_request, packet.session_id)
+                }
+                _ => match self.check_routing(&packet.routing_header) {
+                    Ok(_) => self.forward_packet(packet),
+                    Err(_) => {
+                        _ = self
+                            .controller_send
+                            .send(DroneEvent::ControllerShortcut(packet));
+                    }
+                },
+            }
+        } else {
+            match packet.pack_type {
+                PacketType::MsgFragment(_) => {
+                    if helper::get_hop(&packet.routing_header) != Some(self.id) {
+                        self.handle_drop(packet, NackType::UnexpectedRecipient(self.id));
+                    } else {
+                        self.handle_drop(packet, NackType::ErrorInRouting(self.id));
                     }
                 }
-            }
-            PacketType::FloodRequest(flood_request) => {
-                self.handle_flood_request(flood_request, packet.session_id)
-            }
-            _ => match self.check_routing(&packet.routing_header) {
-                Ok(_) => self.forward_packet(packet),
-                Err(_) => {
+                _ => {
                     _ = self
                         .controller_send
                         .send(DroneEvent::ControllerShortcut(packet));
                 }
-            },
+            }
         }
     }
 
@@ -232,7 +243,10 @@ impl LockheedRustin {
 
     /// Handle the given flood_request.
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
-        let sender_id = flood_request.path_trace.last().map_or(flood_request.initiator_id, |&(sender_id, _)| sender_id);
+        let sender_id = flood_request
+            .path_trace
+            .last()
+            .map_or(flood_request.initiator_id, |&(sender_id, _)| sender_id);
         flood_request.path_trace.push((self.id, NodeType::Drone));
 
         if !self
@@ -240,17 +254,13 @@ impl LockheedRustin {
             .insert((flood_request.initiator_id, flood_request.flood_id))
             || (self.packet_send.len() == 1 && self.packet_send.contains_key(&sender_id))
         {
-            let add_initiator_id = flood_request
-                .path_trace
-                .first()
-                .is_none_or(|&(first_id, _)| first_id != flood_request.initiator_id);
             let mut hops = flood_request
                 .path_trace
                 .iter()
                 .map(|(id, _)| *id)
                 .rev()
                 .collect::<Vec<_>>();
-            if add_initiator_id {
+            if hops.last() != Some(&flood_request.initiator_id) {
                 hops.push(flood_request.initiator_id);
             }
             helper::simplify_hops(&mut hops);
