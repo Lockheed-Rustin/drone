@@ -242,12 +242,19 @@ impl LockheedRustin {
             .insert((flood_request.initiator_id, flood_request.flood_id))
             || (self.packet_send.len() == 1 && self.packet_send.contains_key(&sender_id))
         {
+            let add_initiator_id = flood_request
+                .path_trace
+                .first()
+                .is_none_or(|&(first_id, _)| first_id != flood_request.initiator_id);
             let mut hops = flood_request
                 .path_trace
                 .iter()
                 .map(|(id, _)| *id)
                 .rev()
-                .collect();
+                .collect::<Vec<_>>();
+            if add_initiator_id {
+                hops.push(flood_request.initiator_id);
+            }
             helper::simplify_hops(&mut hops);
             self.forward_packet(Packet {
                 pack_type: PacketType::FloodResponse(FloodResponse {
