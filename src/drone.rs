@@ -58,25 +58,19 @@ impl Drone for LockheedRustin {
     fn run(&mut self) {
         self.state = DroneState::Running;
         loop {
-            if self.state == DroneState::Crashed {
-                if let Ok(packet) = self.packet_recv.recv() {
-                    self.handle_packet(packet);
-                } else {
-                    return;
-                }
-            } else {
-                select_biased! {
-                    recv(self.controller_recv) -> command => {
-                        if let Ok(command) = command {
-                            self.handle_command(command);
-                        }
+            select_biased! {
+                recv(self.controller_recv) -> command => {
+                    if let Ok(command) = command {
+                        self.handle_command(command);
                     }
-                    recv(self.packet_recv) -> packet => {
-                        if let Ok(packet) = packet {
-                            self.handle_packet(packet);
-                        }
-                    },
                 }
+                recv(self.packet_recv) -> packet => {
+                    if let Ok(packet) = packet {
+                        self.handle_packet(packet);
+                    } else if self.state == DroneState::Crashed {
+                        return;
+                    }
+                },
             }
         }
     }
