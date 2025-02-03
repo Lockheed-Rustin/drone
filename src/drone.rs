@@ -64,8 +64,9 @@ impl Drone for LockheedRustin {
                         self.handle_command(command);
                     } else {
                         // this should never happen
-                        // it means that the controller died in which case we just return
-                        return;
+                        // it means that the controller closed it's communication channel
+                        // before the packet channel
+                        break;
                     }
                 }
                 recv(self.packet_recv) -> packet => {
@@ -76,6 +77,9 @@ impl Drone for LockheedRustin {
                     }
                 },
             }
+        }
+        while let Ok(packet) = self.packet_recv.recv() {
+            self.handle_packet(packet);
         }
     }
 }
