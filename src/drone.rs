@@ -62,6 +62,10 @@ impl Drone for LockheedRustin {
                 recv(self.controller_recv) -> command => {
                     if let Ok(command) = command {
                         self.handle_command(command);
+                    } else {
+                        // this should never happen
+                        // it means that the controller died in which case we just return
+                        return;
                     }
                 }
                 recv(self.packet_recv) -> packet => {
