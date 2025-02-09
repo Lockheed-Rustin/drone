@@ -213,35 +213,35 @@ impl LockheedRustin {
                     .collect::<Vec<_>>();
                 // force first id to be this drone id to fix unexpected recipient errors
                 hops[0] = self.id;
-                let next_hop = hops[1];
-                if !self.packet_send.contains_key(&next_hop) {
-                    // this means that the packet was malformed
-                    _ = self
-                        .controller_send
-                        .send(DroneEvent::ControllerShortcut(Packet {
-                            routing_header: SourceRoutingHeader { hop_index: 0, hops },
-                            session_id: packet.session_id,
-                            pack_type: PacketType::Nack(Nack {
-                                fragment_index: fragment.fragment_index,
-                                nack_type: NackType::ErrorInRouting(next_hop),
-                            }),
-                        }));
-                    return;
-                }
 
                 let session_id = packet.session_id;
                 let fragment_index = fragment.fragment_index;
                 if let NackType::Dropped = nack_type {
                     _ = self.controller_send.send(DroneEvent::PacketDropped(packet));
                 }
-                self.forward_packet(Packet {
-                    pack_type: PacketType::Nack(Nack {
-                        fragment_index,
-                        nack_type,
-                    }),
-                    routing_header: SourceRoutingHeader { hop_index: 0, hops },
-                    session_id,
-                });
+                let next_hop = hops[1];
+                if self.packet_send.contains_key(&next_hop) {
+                    self.forward_packet(Packet {
+                        routing_header: SourceRoutingHeader { hop_index: 0, hops },
+                        session_id,
+                        pack_type: PacketType::Nack(Nack {
+                            fragment_index,
+                            nack_type,
+                        }),
+                    });
+                } else {
+                    // this means that the packet was malformed
+                    _ = self
+                        .controller_send
+                        .send(DroneEvent::ControllerShortcut(Packet {
+                            routing_header: SourceRoutingHeader { hop_index: 0, hops },
+                            session_id,
+                            pack_type: PacketType::Nack(Nack {
+                                fragment_index,
+                                nack_type: NackType::ErrorInRouting(next_hop),
+                            }),
+                        }));
+                }
             }
             _ => {
                 _ = self
