@@ -213,11 +213,19 @@ impl LockheedRustin {
                     .collect::<Vec<_>>();
                 // force first id to be this drone id to fix unexpected recipient errors
                 hops[0] = self.id;
-                if !self.packet_send.contains_key(&hops[1]) {
+                let next_hop = hops[1];
+                if !self.packet_send.contains_key(&next_hop) {
                     // this means that the packet was malformed
                     _ = self
                         .controller_send
-                        .send(DroneEvent::ControllerShortcut(packet));
+                        .send(DroneEvent::ControllerShortcut(Packet {
+                            routing_header: SourceRoutingHeader { hop_index: 0, hops },
+                            session_id: packet.session_id,
+                            pack_type: PacketType::Nack(Nack {
+                                fragment_index: fragment.fragment_index,
+                                nack_type: NackType::ErrorInRouting(next_hop),
+                            }),
+                        }));
                     return;
                 }
 
